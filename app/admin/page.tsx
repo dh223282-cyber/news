@@ -58,14 +58,17 @@ export default function AdminDashboard() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+        console.log("Submitting news post...");
 
         try {
             let imageUrl = currentItem.imageUrl || "";
 
             if (imageFile) {
+                console.log("Uploading image to Storage...");
                 const storageRef = ref(storage, `news/${Date.now()}_${imageFile.name}`);
                 const snapshot = await uploadBytes(storageRef, imageFile);
                 imageUrl = await getDownloadURL(snapshot.ref);
+                console.log("Image uploaded, URL:", imageUrl);
             }
 
             const newsData = {
@@ -80,18 +83,21 @@ export default function AdminDashboard() {
             };
 
             if (currentItem.id) {
+                console.log("Updating existing document:", currentItem.id);
                 await updateDoc(doc(db, "news", currentItem.id), newsData);
             } else {
+                console.log("Adding new document to Firestore...");
                 await addDoc(collection(db, "news"), newsData);
             }
 
+            console.log("Success! Closing modal and refreshing list.");
             setIsModalOpen(false);
             setImageFile(null);
             setCurrentItem({});
-            fetchNews();
-        } catch (error) {
+            await fetchNews();
+        } catch (error: any) {
             console.error("Error saving news:", error);
-            alert("Error saving news. Check console.");
+            alert(`Error saving news: ${error.message || "Unknown error"}. Check console.`);
         } finally {
             setLoading(false);
         }
