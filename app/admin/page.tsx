@@ -19,6 +19,8 @@ export default function AdminDashboard() {
     const [currentItem, setCurrentItem] = useState<Partial<NewsItem>>({});
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -51,26 +53,38 @@ export default function AdminDashboard() {
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setImageFile(e.target.files[0]);
+            const file = e.target.files[0];
+            setImageFile(file);
+            setPreviewUrl(URL.createObjectURL(file));
+        } else {
+            setImageFile(null);
+            setPreviewUrl(null);
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        console.log("Submitting news post...");
+        console.log("--- Starting News Upload Process ---");
 
         try {
-            let imageUrl = currentItem.imageUrl || "";
+            let finalImageUrl = currentItem.imageUrl || "";
 
             if (imageFile) {
-                console.log("Uploading image to Storage...");
+                // STEP A: Upload the image/video to Firebase Storage
+                console.log("Stage A: Uploading image/video to Firebase Storage...");
                 const storageRef = ref(storage, `news/${Date.now()}_${imageFile.name}`);
                 const snapshot = await uploadBytes(storageRef, imageFile);
-                imageUrl = await getDownloadURL(snapshot.ref);
-                console.log("Image uploaded, URL:", imageUrl);
+
+                // STEP B: Get the download URL
+                console.log("Stage B: Fetching Download URL from Storage...");
+                finalImageUrl = await getDownloadURL(snapshot.ref);
+                console.log("Success: Media URL obtained ->", finalImageUrl);
+            } else {
+                console.log("Stage A/B: No new image selected. Using existing URL.");
             }
 
+            // STEP C: Save all data (Title, Content, Lang, ImageURL) to Firestore
             const newsData = {
                 title_en: currentItem.title_en || "",
                 title_ta: currentItem.title_ta || "",
@@ -78,27 +92,36 @@ export default function AdminDashboard() {
                 description_ta: currentItem.description_ta || "",
                 category: currentItem.category || "General",
                 videoUrl: currentItem.videoUrl || "",
-                imageUrl,
+                imageUrl: finalImageUrl,
                 createdAt: currentItem.createdAt || Date.now(),
             };
 
             if (currentItem.id) {
-                console.log("Updating existing document:", currentItem.id);
+                console.log("Saving to Firestore (Update)...");
                 await updateDoc(doc(db, "news", currentItem.id), newsData);
+                console.log("Success: Document updated.");
             } else {
-                console.log("Adding new document to Firestore...");
+                console.log("Saving to Firestore (New)...");
                 await addDoc(collection(db, "news"), newsData);
+                console.log("Success: Document created.");
             }
 
-            console.log("Success! Closing modal and refreshing list.");
+            // SUCCESS FEEDBACK - Only after Firestore is successful
+            console.log("Final Success: Upload process completely finished!");
+            alert('News Published!');
+
+            // RESET FORM & UI
             setIsModalOpen(false);
             setImageFile(null);
+            setPreviewUrl(null);
             setCurrentItem({});
             await fetchNews();
+
         } catch (error: any) {
-            console.error("Error saving news:", error);
-            alert(`Error saving news: ${error.message || "Unknown error"}. Check console.`);
+            console.error("Critical Failure during upload process:", error.message);
+            alert(`Upload Failed: ${error.message}`);
         } finally {
+            // Close loading state always
             setLoading(false);
         }
     };
@@ -116,6 +139,8 @@ export default function AdminDashboard() {
         } else {
             setCurrentItem({});
         }
+        setPreviewUrl(null);
+        setSuccessMessage(null);
         setIsModalOpen(true);
     };
 
@@ -255,7 +280,13 @@ export default function AdminDashboard() {
                                 <div>
                                     <label className="block text-sm font-medium mb-1 dark:text-gray-300">Image</label>
                                     <div className="flex items-center gap-4">
-                                        {currentItem.imageUrl && <img src={currentItem.imageUrl} className="h-20 w-20 object-cover rounded" alt="Preview" />}
+                                        {(previewUrl || currentItem.imageUrl) && (
+                                            <img
+                                                src={previewUrl || currentItem.imageUrl}
+                                                className="h-20 w-20 object-cover rounded border dark:border-slate-600"
+                                                alt="Preview"
+                                            />
+                                        )}
                                         <div className="relative">
                                             <input
                                                 type="file"
@@ -265,25 +296,33 @@ export default function AdminDashboard() {
                                                 className="hidden"
                                                 id="file-upload"
                                             />
-                                            <label htmlFor="file-upload" className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition">
-                                                <Upload className="w-4 h-4" /> Upload New Image
+                                            <label htmlFor="file-upload" className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:hover:bg-slate-600 transition">
+                                                <Upload className="w-4 h-4" /> {imageFile ? "Change Image" : "Upload New Image"}
                                             </label>
                                         </div>
                                     </div>
+                                    {imageFile && <p className="text-xs text-blue-500 mt-1">Selected: {imageFile.name}</p>}
                                 </div>
 
-                                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
-                                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg mr-4 transaction">
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={loading}
-                                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
-                                    >
-                                        {loading && <Loader2 className="animate-spin w-4 h-4" />}
-                                        {currentItem.id ? "Update Post" : "Publish Post"}
-                                    </button>
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-4 border-t dark:border-slate-700">
+                                    {successMessage && (
+                                        <div className="text-green-600 dark:text-green-400 font-medium animate-pulse">
+                                            {successMessage}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-4 ml-auto">
+                                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition">
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={loading}
+                                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
+                                        >
+                                            {loading && <Loader2 className="animate-spin w-4 h-4" />}
+                                            {currentItem.id ? "Update Post" : "Publish Post"}
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         </div>
