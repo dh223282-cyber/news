@@ -19,6 +19,7 @@ export default function Home() {
     const fetchNews = async () => {
       try {
         console.log("Fetching news from collection 'news'...");
+        // OPTIMIZATION: Limit to 10 items for speed
         const q = query(collection(db, "news"), orderBy("createdAt", "desc"), limit(10));
         const snapshot = await getDocs(q);
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));

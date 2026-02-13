@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { auth, db, storage } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useLanguage } from "@/context/LanguageContext";
 import { NewsItem } from "@/types";
@@ -36,27 +36,29 @@ export default function AdminDashboard() {
             alert(`Configuration Error: Missing environment variables: ${missing.join(', ')}. Please add them to Vercel.`);
         }
 
-        const unsubscribe = onAuthStateChanged(auth, (u) => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
             if (!u) {
                 router.push("/admin/login");
             } else {
                 setUser(u);
-                fetchNews();
             }
         });
-        return () => unsubscribe();
-    }, [router]);
 
-    const fetchNews = async () => {
-        try {
-            const q = query(collection(db, "news"), orderBy("createdAt", "desc"), limit(50));
-            const snapshot = await getDocs(q);
+        // Real-time News Listener
+        // Using onSnapshot ensures the UI updates instantly when the DB changes
+        const q = query(collection(db, "news"), orderBy("createdAt", "desc"), limit(50));
+        const unsubscribeNews = onSnapshot(q, (snapshot) => {
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));
             setNews(items);
-        } catch (e) {
-            console.error("Error fetching news", e);
-        }
-    };
+        }, (error) => {
+            console.error("Real-time fetch error:", error);
+        });
+
+        return () => {
+            unsubscribeAuth();
+            unsubscribeNews();
+        };
+    }, [router]);
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -139,8 +141,7 @@ export default function AdminDashboard() {
             setPreviewUrl(null);
             setCurrentItem({});
 
-            // Refresh List (Background - do not await or block UI)
-            fetchNews().catch(err => console.warn("Background refresh failed", err));
+            // Note: onSnapshot listener automatically updates the list!
 
         } catch (error: any) {
             clearTimeout(safetyTimeout);
@@ -157,7 +158,7 @@ export default function AdminDashboard() {
     const handleDelete = async (id: string) => {
         if (confirm("Are you sure you want to delete this news?")) {
             await deleteDoc(doc(db, "news", id));
-            fetchNews();
+            // onSnapshot handles the refresh
         }
     };
 
