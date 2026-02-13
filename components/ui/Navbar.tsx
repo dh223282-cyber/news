@@ -6,28 +6,25 @@ import { useLanguage } from "@/context/LanguageContext";
 import { Moon, Sun, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "next-themes";
 
 export default function Navbar() {
     const { t, language, toggleLanguage } = useLanguage();
-    const [isDark, setIsDark] = useState(false);
+    const { theme, setTheme, resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
-        // Check system preference
-        if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-            setIsDark(true);
-            document.documentElement.classList.add("dark");
-        }
+        setMounted(true);
     }, []);
 
     const toggleTheme = () => {
-        setIsDark(!isDark);
-        if (document.documentElement.classList.contains("dark")) {
-            document.documentElement.classList.remove("dark");
-        } else {
-            document.documentElement.classList.add("dark");
-        }
+        setTheme(resolvedTheme === "dark" ? "light" : "dark");
     };
+
+    // Hydration mismatch fix: render a placeholder or nothing until mounted
+    // We can render the structure but avoid rendering the specific icon dependent state if strictly needed,
+    // but usually 'mounted' approach returning null for the interactive part is safer or just use mounted to key the icon.
 
     return (
         <nav className="fixed w-full z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-gray-200 dark:border-slate-800 transition-all duration-300">
@@ -43,6 +40,9 @@ export default function Navbar() {
                         <Link href="/" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
                             {t("home")}
                         </Link>
+                        <Link href="/admin" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
+                            {t("upload")}
+                        </Link>
                         <Link href="/#videos" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
                             {t("videos")}
                         </Link>
@@ -55,7 +55,7 @@ export default function Navbar() {
                         </button>
 
                         <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition">
-                            {isDark ? <Sun className="w-5 h-5 text-yellow-500" /> : <Moon className="w-5 h-5 text-slate-700" />}
+                            {mounted && (resolvedTheme === "dark" ? <Sun className="w-5 h-5 text-yellow-500" /> : <Moon className="w-5 h-5 text-slate-700" />)}
                         </button>
                     </div>
 
@@ -79,6 +79,9 @@ export default function Navbar() {
                             <Link href="/" onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-200 hover:text-blue-600 hover:bg-gray-50 dark:hover:bg-slate-900 w-full text-center">
                                 {t("home")}
                             </Link>
+                            <Link href="/admin" onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-200 hover:text-blue-600 hover:bg-gray-50 dark:hover:bg-slate-900 w-full text-center">
+                                {t("upload")}
+                            </Link>
                             <Link href="/#videos" onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-200 hover:text-blue-600 hover:bg-gray-50 dark:hover:bg-slate-900 w-full text-center">
                                 {t("videos")}
                             </Link>
@@ -89,7 +92,7 @@ export default function Navbar() {
                                 {t("switchLanguage")}
                             </button>
                             <button onClick={toggleTheme} className="mt-2 p-2 w-full flex justify-center">
-                                {isDark ? <Sun className="w-5 h-5 text-yellow-500" /> : <Moon className="w-5 h-5 text-slate-700" />}
+                                {mounted && (resolvedTheme === "dark" ? <Sun className="w-5 h-5 text-yellow-500" /> : <Moon className="w-5 h-5 text-slate-700" />)}
                             </button>
                         </div>
                     </motion.div>

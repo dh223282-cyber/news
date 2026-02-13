@@ -7,7 +7,7 @@ import { NewsItem } from "@/types";
 import { motion } from "framer-motion";
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, limit } from "firebase/firestore";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -19,7 +19,7 @@ export default function Home() {
     const fetchNews = async () => {
       try {
         console.log("Fetching news from collection 'news'...");
-        const q = query(collection(db, "news"), orderBy("createdAt", "desc"));
+        const q = query(collection(db, "news"), orderBy("createdAt", "desc"), limit(10));
         const snapshot = await getDocs(q);
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));
         setNewsItems(items);
@@ -40,6 +40,14 @@ export default function Home() {
     return (
       <div className="min-h-screen flex items-center justify-center dark:bg-slate-950">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (newsItems.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center dark:bg-slate-950">
+        <h2 className="text-2xl font-bold dark:text-white">No News Found</h2>
       </div>
     );
   }

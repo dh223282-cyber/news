@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { auth, db, storage } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useLanguage } from "@/context/LanguageContext";
 import { NewsItem } from "@/types";
@@ -24,6 +24,18 @@ export default function AdminDashboard() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        // Check for critical environment variables
+        const requiredVars = [
+            'NEXT_PUBLIC_FIREBASE_API_KEY',
+            'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+            'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'
+        ];
+        const missing = requiredVars.filter(v => !process.env[v]);
+        if (missing.length > 0) {
+            console.error("Missing Env Vars:", missing);
+            alert(`Configuration Error: Missing environment variables: ${missing.join(', ')}. Please add them to Vercel.`);
+        }
+
         const unsubscribe = onAuthStateChanged(auth, (u) => {
             if (!u) {
                 router.push("/admin/login");
@@ -37,7 +49,7 @@ export default function AdminDashboard() {
 
     const fetchNews = async () => {
         try {
-            const q = query(collection(db, "news"), orderBy("createdAt", "desc"));
+            const q = query(collection(db, "news"), orderBy("createdAt", "desc"), limit(50));
             const snapshot = await getDocs(q);
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));
             setNews(items);
@@ -65,26 +77,39 @@ export default function AdminDashboard() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+
+        // Safety Timeout
+        const safetyTimeout = setTimeout(() => {
+            setLoading((prev) => {
+                if (prev) {
+                    alert("Network Timed Out. Check your connection.");
+                    return false;
+                }
+                return prev;
+            });
+        }, 15000);
+
         console.log("--- Starting News Upload Process ---");
+
+        // VALIDATION
+        if (!currentItem.title_en || !currentItem.description_en || !currentItem.category) {
+            clearTimeout(safetyTimeout);
+            alert('Please fill in all required fields.');
+            setLoading(false);
+            return;
+        }
 
         try {
             let finalImageUrl = currentItem.imageUrl || "";
 
             if (imageFile) {
-                // STEP A: Upload the image/video to Firebase Storage
-                console.log("Stage A: Uploading image/video to Firebase Storage...");
+                // Upload Image
                 const storageRef = ref(storage, `news/${Date.now()}_${imageFile.name}`);
                 const snapshot = await uploadBytes(storageRef, imageFile);
-
-                // STEP B: Get the download URL
-                console.log("Stage B: Fetching Download URL from Storage...");
                 finalImageUrl = await getDownloadURL(snapshot.ref);
-                console.log("Success: Media URL obtained ->", finalImageUrl);
-            } else {
-                console.log("Stage A/B: No new image selected. Using existing URL.");
             }
 
-            // STEP C: Save all data (Title, Content, Lang, ImageURL) to Firestore
+            // Prepare Data
             const newsData = {
                 title_en: currentItem.title_en || "",
                 title_ta: currentItem.title_ta || "",
@@ -96,35 +121,38 @@ export default function AdminDashboard() {
                 createdAt: currentItem.createdAt || Date.now(),
             };
 
+            // Write to Firestore
             if (currentItem.id) {
-                console.log("Saving to Firestore (Update)...");
                 await updateDoc(doc(db, "news", currentItem.id), newsData);
-                console.log("Success: Document updated.");
             } else {
-                console.log("Saving to Firestore (New)...");
                 await addDoc(collection(db, "news"), newsData);
-                console.log("Success: Document created.");
             }
 
-            // SUCCESS FEEDBACK - Only after Firestore is successful
-            console.log("Final Success: Upload process completely finished!");
-            alert('News Published!');
+            // CRITICAL: UI Feedback MUST happen immediately after await finishes
+            clearTimeout(safetyTimeout);
+            setLoading(false); // Stop spinner
+            alert('Success! Post published.'); // Show alert
+            setIsModalOpen(false); // Close modal
 
-            // RESET FORM & UI
-            setIsModalOpen(false);
+            // Reset Form (Background)
             setImageFile(null);
             setPreviewUrl(null);
             setCurrentItem({});
-            await fetchNews();
+
+            // Refresh List (Background - do not await or block UI)
+            fetchNews().catch(err => console.warn("Background refresh failed", err));
 
         } catch (error: any) {
-            console.error("Critical Failure during upload process:", error.message);
-            alert(`Upload Failed: ${error.message}`);
-        } finally {
-            // Close loading state always
+            clearTimeout(safetyTimeout);
             setLoading(false);
+            console.error("Upload failed:", error);
+
+            let msg = error.message;
+            if (error.code === 'permission-denied') msg = "Permission Denied. Check Rules.";
+            alert(`Error: ${msg}`);
         }
     };
+
 
     const handleDelete = async (id: string) => {
         if (confirm("Are you sure you want to delete this news?")) {
